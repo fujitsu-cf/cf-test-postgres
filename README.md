@@ -22,6 +22,13 @@ cf push cf-test-postgres -u process
 
 ## How to add new entry to database
 
+```
+curl -X POST -H "Content-Type: application/json" -d '{"name":"John","surname":"Doe", "age": "23", "email":"test@email.com"}' http://cf-test-postgres.domain/user
+```
 
 ## How to get all data
+
+```
+curl http://cf-test-postgres.domain/users
+```
 
