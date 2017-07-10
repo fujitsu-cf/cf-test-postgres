@@ -1,6 +1,6 @@
 # cf-test-postgres
 This is simple test application for CF. The `cf-test-postgres` connects to PostgreSQL database and creates REST endpoints for 
-adding and retriving data to/from database.
+adding and retrieving data to/from database.
 
 ## Configuration
 In `main.go` you can find consts for database connection
