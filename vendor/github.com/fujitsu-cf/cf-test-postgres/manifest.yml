@@ -1,0 +1,6 @@
+---
+applications:
+- env:
+    GOVERSION: go1.8
+    GOPACKAGENAME: github.com/fujitsu-cf/cf-test-postgres
+command: cf-test-postgres

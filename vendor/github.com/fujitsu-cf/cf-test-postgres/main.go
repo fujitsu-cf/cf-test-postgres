@@ -5,54 +5,46 @@ import (
 	"fmt"
 
 	"encoding/json"
-	"github.com/gorilla/mux"
-	"github.com/rs/cors"
 	"log"
 	"net/http"
+
+	"github.com/gorilla/mux"
 
 	_ "github.com/lib/pq"
 )
 
 const (
-	host        = "127.0.0.1"
-	port        = 5432
-	user        = "postgres"
-	password    = "password"
-	dbname      = "postgres"
-	createtable = `CREATE TABLE users (
-  id serial NOT NULL,
-  first_name TEXT,
-  last_name TEXT,
-  age INT,
-  email TEXT UNIQUE NOT NULL,
-  avatar TEXT,
-  CONSTRAINT userinfo_pkey PRIMARY KEY (id)
-)`
+	host     = "10.0.0.4"
+	port     = 5432
+	user     = "postgres"
+	password = "password"
+	dbname   = "postgres"
 )
 
 type User struct {
 	Id      int    `json:"id"`
 	Name    string `json:"name"`
 	Surname string `json:"surname"`
-	Age     int    `json:"age"`
+	Age     string `json:"age"`
 	Email   string `json:"email"`
-	Avatar  string `json:"avatar"`
 }
 
 var dbGlobal *sql.DB
 
 func main() {
 
+	createtable := `CREATE TABLE users (
+  id serial NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
+  age INT,
+  email TEXT UNIQUE NOT NULL,
+  CONSTRAINT userinfo_pkey PRIMARY KEY (id)
+)`
+
 	router := mux.NewRouter()
 	router.HandleFunc("/users", handleUsers).Methods("GET")
 	router.HandleFunc("/user", handleUser).Methods("POST")
-	router.HandleFunc("/delete", handleDelete).Methods("POST")
-	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
-		AllowCredentials: true,
-	})
-
-	handler := c.Handler(router)
 
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
@@ -81,38 +73,7 @@ func main() {
 		fmt.Println(err.Error())
 	}
 
-	http.ListenAndServe(":8080", handler)
-
-}
-
-func handleDelete(res http.ResponseWriter, req *http.Request) {
-	res.Header().Set("Content-Type", "application/json")
-
-	switch req.Method {
-	case "POST":
-		log.Println("Delete received ")
-		user := new(User)
-		decoder := json.NewDecoder(req.Body)
-		error := decoder.Decode(&user)
-		if error != nil {
-			log.Println(error.Error())
-			http.Error(res, error.Error(), http.StatusInternalServerError)
-			return
-		}
-		log.Println(user)
-		sqlStatement := `  
-DELETE FROM users  
-WHERE id = $1;`
-		_, err := dbGlobal.Exec(sqlStatement, user.Id)
-		if err != nil {
-			log.Println(err.Error())
-			http.Error(res, err.Error(), http.StatusInternalServerError)
-			return
-
-		}
-
-		res.WriteHeader(http.StatusOK)
-	}
+	http.ListenAndServe(":9999", router)
 
 }
 
@@ -121,7 +82,7 @@ func handleUser(res http.ResponseWriter, req *http.Request) {
 
 	switch req.Method {
 	case "POST":
-		log.Println("POST received %s", req.Body)
+		log.Println("POST received")
 		user := new(User)
 		decoder := json.NewDecoder(req.Body)
 		error := decoder.Decode(&user)
@@ -133,7 +94,7 @@ func handleUser(res http.ResponseWriter, req *http.Request) {
 		log.Println(user)
 		log.Println(dbGlobal)
 		var lastInsertId int
-		err := dbGlobal.QueryRow("INSERT INTO users(first_name,last_name,age,email,avatar) VALUES($1,$2,$3,$4,$5) returning id;", user.Name, user.Surname, user.Age, user.Email, user.Avatar).Scan(&lastInsertId)
+		err := dbGlobal.QueryRow("INSERT INTO users(first_name,last_name,age,email) VALUES($1,$2,$3,$4) returning id;", user.Name, user.Surname, user.Age, user.Email).Scan(&lastInsertId)
 
 		if err != nil {
 			log.Println(err.Error())
@@ -157,26 +118,47 @@ func handleUsers(res http.ResponseWriter, req *http.Request) {
 	}
 	defer rows.Close()
 
-	var users []User
-
-	for rows.Next() {
-		var usr User
-
-		err = rows.Scan(&usr.Id, &usr.Name, &usr.Surname, &usr.Age, &usr.Email, &usr.Avatar)
-		if err != nil {
-			fmt.Println("error:", err)
-		}
-
-		users = append(users, usr)
+	// Get column names
+	columns, err := rows.Columns()
+	if err != nil {
+		panic(err.Error())
 	}
 
-	if len(users) > 0 {
-		b, err := json.Marshal(users)
+	// Make a slice for the values
+	values := make([]interface{}, len(columns))
+
+	// rows.Scan wants '[]interface{}' as an argument, so we must copy the
+	// references into such a slice
+	// See http://code.google.com/p/go-wiki/wiki/InterfaceSlice for details
+	scanArgs := make([]interface{}, len(values))
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
+
+	// Fetch rows
+	for rows.Next() {
+		err = rows.Scan(scanArgs...)
 		if err != nil {
-			fmt.Println("error:", err)
+			panic(err.Error())
 		}
 
-		fmt.Fprintf(res, string(b))
+		// Print data
+		for i, value := range values {
+			switch value.(type) {
+			case nil:
+				fmt.Println(columns[i], ": NULL")
+
+			case []byte:
+				fmt.Println(columns[i], ": ", string(value.([]byte)))
+				fmt.Fprintf(res, " %s ", string(value.([]byte)))
+
+			default:
+				fmt.Println(columns[i], ": ", value)
+				fmt.Fprintf(res, " %v ", value)
+			}
+		}
+		fmt.Fprintf(res, "\n ")
+		fmt.Println("-----------------------------------")
 	}
 
 }
